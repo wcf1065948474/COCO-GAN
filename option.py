@@ -10,7 +10,7 @@ class Option(object):
         self.datadir='../input/img_align_celeba/img_align_celeba'
         self.macro_size = 64
         self.micro_size = 32
-        self.full_szie = 128
+        self.full_size = 128
         self.LAMBDA = 10
         self.ALPHA = 100
         self.epoch = 50
