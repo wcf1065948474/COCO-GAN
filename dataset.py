@@ -15,7 +15,7 @@ def get_img_path(dir):
 class MacroCelebaDataset(object):
     def __init__(self,opt):
         self.opt = opt
-        self.wh = int(opt.full_szie/opt.micro_size)-1
+        self.wh = int(opt.full_size/opt.micro_size)-1
         self.celeba_imgpaths = get_img_path(self.opt.datadir)
         self.size = len(self.celeba_imgpaths)
         self.transform = transforms.Compose(
