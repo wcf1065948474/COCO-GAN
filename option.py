@@ -2,7 +2,7 @@ class Option(object):
     def __init__(self):
         self.batchsize = 64
         self.latentsize = 100
-        self.y_emd_size = 28
+        self.y_ebdsize = 28
         self.latentoutsize = 1024*2*2
         self.num_classes = 16
         self.micro_in_macro = 4
