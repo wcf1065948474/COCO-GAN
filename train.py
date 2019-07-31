@@ -68,6 +68,7 @@ class COCOGAN(object):
         return gradient_penalty
 
     def forward(self,latent_y,ebd_y):
+        latent_y = latent_y.cuda()
         micro_patches = self.G(latent_y,ebd_y)
         self.ebd_y = ebd_y
         self.macro_patcher = self.macro_from_micro(micro_patches)
