@@ -35,6 +35,8 @@ class GeneratorResidualBlock(nn.Module):
     master = self.relu1(input)
     master = nn.functional.interpolate(master,scale_factor=2)
     master = self.conv1(master)
+    print(type(master))
+    print(type(y))
     master = self.cbn(master,y)
     master = self.relu2(master)
     master = self.conv2(master)
