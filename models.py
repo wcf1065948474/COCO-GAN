@@ -47,7 +47,7 @@ class Generator(nn.Module):
   def __init__(self,opt):
     super().__init__()
     self.opt = opt
-    self.linear = nn.Linear(opt.latentsize+opt.ebdsize,opt.latentoutsize)
+    self.linear = nn.Linear(opt.latentsize+opt.y_ebdsize,opt.latentoutsize)
     self.grb1 = GeneratorResidualBlock(opt,1024,512)
     self.grb2 = GeneratorResidualBlock(opt,512,256)
     self.grb3 = GeneratorResidualBlock(opt,256,128)
