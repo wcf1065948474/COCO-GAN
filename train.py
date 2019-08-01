@@ -69,6 +69,7 @@ class COCOGAN(object):
 
     def forward(self,latent_y,ebd_y):
         latent_y = latent_y.cuda()
+        ebd_y = ebd_y.cuda()
         micro_patches = self.G(latent_y,ebd_y)
         self.ebd_y = ebd_y
         self.macro_patcher = self.macro_from_micro(micro_patches)
@@ -76,6 +77,7 @@ class COCOGAN(object):
     def backward(self,x,y):
         #update D()
         x = x.cuda()
+        y = y.cuda()
         self.D.zero_grad()
         macro_patcher = self.macro_patcher.detach()
         fakeD,_ = self.D(macro_patcher,self.ebd_y)#y有问题！
