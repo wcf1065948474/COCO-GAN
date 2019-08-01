@@ -14,6 +14,8 @@ class ConditionalBatchNorm2d(nn.Module):
     self.embed.weight.data[:, num_features:].zero_()  # Initialise bias at 0
 
   def forward(self, x, y):
+    print(x.device)
+    print(y.device)
     out = self.bn(x)
     gamma, beta = self.embed(y).chunk(2, 1)
     out = gamma.view(-1, self.num_features, 1, 1) * out + beta.view(-1, self.num_features, 1, 1)
@@ -35,8 +37,8 @@ class GeneratorResidualBlock(nn.Module):
     master = self.relu1(input)
     master = nn.functional.interpolate(master,scale_factor=2)
     master = self.conv1(master)
-    print(type(master))
-    print(type(y))
+    print(master.device)
+    print(y.device)
     master = self.cbn(master,y)
     master = self.relu2(master)
     master = self.conv2(master)
