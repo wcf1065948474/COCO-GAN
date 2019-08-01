@@ -60,7 +60,7 @@ class Generator(nn.Module):
     )
   def forward(self,input,y):
     res = self.linear(input)
-    res = res.view(self.opt.batchsize,1024,2,2)
+    res = res.view(self.opt.batchsize*self.opt.micro_in_macro,1024,2,2)
     res = self.grb1(res,y)
     res = self.grb2(res,y)
     res = self.grb3(res,y)
