@@ -8,7 +8,7 @@ class GetLatentY(object):
         self.opt = opt
         self.ebd = torch.nn.Embedding(16,28)
     def get_new_latent(self):
-        self.z = np.random.normal(0.0,1.0,(self.opt.batchsize,100)).astype(np.float32)
+        self.z = np.random.normal(0.0,1.0,(self.opt.batchsize,100))#.astype(np.float32)
         self.z = np.repeat(self.z,self.opt.micro_in_macro,0)
         self.z = torch.from_numpy(self.z)
     def get_ebd(self,y):

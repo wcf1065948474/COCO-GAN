@@ -147,7 +147,8 @@ class GeneratePosList(object):
   def get_pos_list(self,p,isMacro=True):
     pos = []
     if isMacro:
-      return self.macro_table[p]
+      pos.append(self.macro_table[p])
+      return torch.LongTensor(pos)
     else:
       for i in range(int(np.sqrt(self.opt.micro_in_macro))):
         for j in range(int(np.sqrt(self.opt.micro_in_macro))):
