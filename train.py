@@ -2,14 +2,16 @@ import torch
 import option
 import models
 import numpy as np
+import matplotlib.pyplot as plt
 
 class GetLatentY(object):
     def __init__(self,opt):
         self.opt = opt
         self.ebd = torch.nn.Embedding(16,28)
-    def get_new_latent(self):
-        self.z = np.random.normal(0.0,1.0,(self.opt.batchsize,100))#.astype(np.float32)
-        self.z = np.repeat(self.z,self.opt.micro_in_macro,0)
+    def get_new_latent(self,isNew = False):
+        self.z = np.random.normal(0.0,1.0,(self.opt.batchsize,100)).astype(np.float32)
+        if isNew == False:
+            self.z = np.repeat(self.z,self.opt.micro_in_macro,0)
         self.z = torch.from_numpy(self.z)
     def get_ebd(self,y):
         ebd_y = self.ebd(y)
@@ -21,6 +23,26 @@ class GetLatentY(object):
         latent_y = torch.cat((self.z,ebd_y),1)
         return latent_y,ebd_y
 
+class NewGetLatentY(object):
+    def __init__(self,opt):
+        self.opt = opt
+        self.ebd = torch.linspace(-1,1,steps=16,dtype=torch.float32)
+    def get_new_latent(self,isNew = False):
+        self.z = np.random.normal(0.0,1.0,(self.opt.batchsize,127)).astype(np.float32)
+        if isNew == False:
+            self.z = np.repeat(self.z,self.opt.micro_in_macro,0)
+        self.z = torch.from_numpy(self.z)
+    def get_ebd(self,y):
+        y = torch.LongTensor(y)
+        ebd_y = self.ebd(y).view(-1,1)
+        ebd_y = ebd_y.expand(self.opt.batchsize,-1)
+        return ebd_y
+    def get_latent_y(self,y):
+        y = torch.LongTensor(y)
+        ebd_y = self.ebd(y).view(-1,1)
+        ebd_y = ebd_y.repeat((self.opt.batchsize,1))
+        latent_y = torch.cat((self.z,ebd_y),1)
+        return latent_y,ebd_y
 
 class COCOGAN(object):
     def __init__(self,opt):
@@ -34,10 +56,22 @@ class COCOGAN(object):
         self.g_losses = []
         self.G.cuda()
         self.D.cuda()
+        self.G.apply(self.weights_init)
+        self.D.apply(self.weights_init)
+    def weights_init(self,m):
+        classname = m.__class__.__name__
+        if classname.find('Conv') != -1:
+            nn.init.normal_(m.weight.data, 0.0, 0.02)
+        elif classname.find('BatchNorm') != -1:
+            if classname.find('Conditional') == -1:
+                if m.weight is not None:
+                    nn.init.normal_(m.weight.data, 1.0, 0.02)
+                    nn.init.constant_(m.bias.data, 0)
+
     def macro_from_micro(self,micro):
-        hw = int(np.sqrt(self.opt.micro_in_macro))
-        batchs = int(micro.size(0)/self.opt.micro_in_macro)
-        spatial = int(self.opt.micro_size*hw)
+        hw = int(np.sqrt(self.opt.micro_in_macro))#macro每行每列有多少micro
+        batchs = int(micro.size(0)/self.opt.micro_in_macro)#macro的batchs
+        spatial = int(self.opt.micro_size*hw)#macro的分辨率
         macros = torch.empty((batchs,3,spatial,spatial),dtype=micro.dtype)
         for b in range(batchs):
             bb = b*self.opt.micro_in_macro
@@ -45,11 +79,11 @@ class COCOGAN(object):
                 ii = i*self.opt.micro_size
                 for j in range(hw):
                     jj = j*self.opt.micro_size
-                    macros[b,:,ii:ii+self.opt.micro_size,jj:jj+self.opt.micro_size] = micro[bb+hw*i+j]
-        return macros
-    def calc_gradient_penalty(self,real_data,fake_data):
+                    macros[b,:,ii:ii+self.opt.micro_size,jj:jj+self.opt.micro_size] = micro[bb+hw*i+j].clone()
+        return macros.cuda()
+    def calc_gradient_penalty(self,real_data,fake_data,ebd_y):
         #print real_data.size()
-        alpha = torch.rand(self.opt.batchsize, 1)
+        alpha = torch.rand(self.opt.batchsize, 1,1,1)
         alpha = alpha.expand(real_data.size())
         alpha = alpha.cuda()
 
@@ -58,47 +92,108 @@ class COCOGAN(object):
         interpolates = interpolates.cuda()
         interpolates = torch.autograd.Variable(interpolates, requires_grad=True)
 
-        disc_interpolates = self.D(interpolates)
+        disc_interpolates,disc_h = self.D(interpolates,ebd_y)
 
-        gradients = torch.autograd.grad(outputs=disc_interpolates, inputs=interpolates,
-                                    grad_outputs=torch.ones(disc_interpolates.size()).cuda(),
-                                    create_graph=True, retain_graph=True, only_inputs=True)[0]
+        gradients = torch.autograd.grad(outputs=[disc_interpolates,disc_h], inputs=[interpolates,ebd_y],
+                                    grad_outputs=[torch.ones(disc_interpolates.size()).cuda(),torch.ones(disc_h.size()).cuda()],
+                                    create_graph=True, retain_graph=True, only_inputs=True)
 
-        gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean() * self.opt.LAMBDA
-        return gradient_penalty
+        gradient_penalty = (gradients[0].norm(2,dim=1)-1)**2+((gradients[1].norm(2,dim=1)-1)**2).view(self.opt.batchsize,1,1)
+        return gradient_penalty.mean()*self.opt.LAMBDA
 
-    def forward(self,latent_y,ebd_y):
+    def forward(self,latent_y,y):
         latent_y = latent_y.cuda()
-        ebd_y = ebd_y.cuda()
-        micro_patches = self.G(latent_y,ebd_y)
-        self.ebd_y = ebd_y
-        self.macro_patcher = self.macro_from_micro(micro_patches)
-        
-    def backward(self,x,y):
+        y = y.cuda()
+        micro_patches = self.G(latent_y,y)
+        self.macro_patches = self.macro_from_micro(micro_patches)
+    def forward_new(self,latent_y,y):
+        assert y is list
+        self.micro_patches = []
+        tmp_patches = []
+        hw = int(np.sqrt(self.opt.micro_in_macro))
+        for y_i in y:
+            y_i = y_i.cuda()
+            latent_y = latent_y.cuda()
+            self.micro_patches.append(self.G(latent_y,y_i))
+        for i in range(hw):
+            tmp_patches.append(torch.cat(self.micro_patches[i*hw:i*hw+hw],3))
+        self.macro_patches = torch.cat(tmp_patches,2)
+
+    def backward(self,x,ebd_y):
         #update D()
         x = x.cuda()
-        y = y.cuda()
+        ebd_y = ebd_y.cuda()
         self.D.zero_grad()
-        macro_patcher = self.macro_patcher.detach()
-        fakeD,_ = self.D(macro_patcher,self.ebd_y)#y有问题！
-        realD,realDH = self.D(x.cuda(),y)#y有问题！
-        gradient_penalty = self.calc_gradient_penalty(realD,fakeD)
-        d_loss = fakeD.mean()-realD.mean()+gradient_penalty+self.opt.ALPHA*self.Lsloss(realDH,y)
-        d_loss.backward()
+        self.macro_data = self.macro_patches.detach()
+        macro_p = self.macro_data.cuda()
+        fakeD,_ = self.D(macro_p,ebd_y)#y有问题！
+        realD,realDH = self.D(x,ebd_y)#y有问题！
+        gradient_penalty = self.calc_gradient_penalty(x,macro_p,ebd_y)
+        d_loss = fakeD.mean()-realD.mean()+gradient_penalty+self.opt.ALPHA*self.Lsloss(realDH,ebd_y)
+        d_loss.backward(retain_graph=True)
         self.optimizerD.step()
         self.d_losses.append(d_loss.item())
         #update G()
         self.G.zero_grad()
-        realG,realGH = self.D(self.macro_patcher,self.ebd_y)#y有问题!
-        g_loss = -realG.mean()+self.opt.ALPHA*self.Lsloss(realGH,self.ebd_y)
+        realG,realGH = self.D(self.macro_patches,ebd_y)#y有问题!
+        g_loss = -realG.mean()+self.opt.ALPHA*self.Lsloss(realGH,ebd_y)
         g_loss.backward()
         self.optimizerG.step()
         self.g_losses.append(g_loss.item())
     
+    def generate_full_image_1(self):
+        self.G.eval()
+        z = np.random.normal(0.0,1.0,(1,127)).astype(np.float32)
+        z = np.repeat(z,self.opt.num_classes,0)
+        z = torch.from_numpy(z)
+        y = torch.linspace(-1,1,self.opt.num_classes)
+        y = y.view(self.opt.num_classes,1)
+        latent_y = torch.cat((z,y),1)
+        micros = self.G(latent_y,y)
+
+        hw = int(np.sqrt(self.opt.micro_in_macro))#macro每行每列有多少micro
+        spatial = int(self.opt.micro_size*hw)#macro的分辨率
+        macros = torch.empty((spatial,spatial,3),dtype=micros.dtype)
+        for h in range(int(np.sqrt(self.opt.num_classes))):
+            for w in range(int(np.sqrt(self.opt.num_classes))):
+                macros[h*self.opt.micro_size:h*self.opt.micro_size+self.opt.micro_size,w*self.opt.micro_size:w*self.opt.micro_size+self.opt.micro_size,:]=micros[h*int(np.sqrt(self.opt.num_classes))+w]
+        plt.figure(figsize=(3,3))
+        plt.axis('off')
+        plt.imshow(macros)
+        plt.show()
+        self.G.train()
+    def generate_full_image_2(self):
+        pass
+
+    def save_network(self,epoch_label):
+        save_filename = "%s_netG.pth"%epoch_label
+        save_path = os.path.join(self.opt.my_model_dir,save_filename)
+        torch.save(self.G.cpu().state_dict(),save_path)
+        save_filename = "%s_netD.pth"%epoch_label
+        save_path = os.path.join(self.opt.my_model_dir,save_filename)
+        torch.save(self.D.cpu().state_dict(),save_path)
+    def load_network(self,epoch_label):
+        filename = "%s_netG.pth"%epoch_label
+        filepath = os.path.join(self.opt.my_model_dir,filename)
+        self.G.load_state_dict(torch.load(filepath))
+        filename = "%s_netD.pth"%epoch_label
+        filepath = os.path.join(self.opt.my_model_dir,filename)
+        self.D.load_state_dict(torch.load(filepath))
+
     def show_img(self):
-        pass
+        plt.figure(figsize=(3,3))
+        plt.axis('off')
+        img = self.macro_data.cpu()
+        plt.imshow(img[0].permute(1,2,0))
+        plt.show()
+        
     def show_loss(self):
-        pass
+        avg_d_loss = sum(self.d_losses)/len(self.d_losses)
+        avg_g_loss = sum(self.g_losses)/len(self.g_losses)
+        print("d_loss={},g_loss={}".format(avg_d_loss,avg_g_loss))
+    def reset_loss(self):
+        self.d_losses = []
+        self.g_losses = []
         
 
 

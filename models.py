@@ -5,19 +5,19 @@ import option
 import matplotlib.pyplot as plt
 
 class ConditionalBatchNorm2d(nn.Module):
-  def __init__(self, num_features, num_classes):
+  def __init__(self,opt, num_features):
     super().__init__()
+    self.opt = opt
     self.num_features = num_features
     self.bn = nn.BatchNorm2d(num_features, affine=False)
-    self.embed = nn.Embedding(num_classes, num_features * 2)
+    self.embed = nn.Embedding(opt.num_classes, num_features * 2)
     self.embed.weight.data[:, :num_features].normal_(1, 0.02)  # Initialise scale at N(1, 0.02)
     self.embed.weight.data[:, num_features:].zero_()  # Initialise bias at 0
 
   def forward(self, x, y):
-    print(x.device)
-    print(y.device)
     out = self.bn(x)
-    gamma, beta = self.embed(y).chunk(2, 1)
+    ebd_y = self.embed(y).reapt((self.opt.batchsize,1))
+    gamma, beta = ebd_y.chunk(2, 1)
     out = gamma.view(-1, self.num_features, 1, 1) * out + beta.view(-1, self.num_features, 1, 1)
     return out
 
@@ -31,14 +31,12 @@ class GeneratorResidualBlock(nn.Module):
     self.conv1 = nn.Conv2d(input_channel,output_channel,3,padding=1)
     self.conv2 = nn.Conv2d(output_channel,output_channel,3,padding=1)
     self.conv_branch = nn.Conv2d(input_channel,output_channel,3,padding=1)
-    self.cbn = ConditionalBatchNorm2d(output_channel,opt.num_classes)
+    self.cbn = ConditionalBatchNorm2d(opt,output_channel)
 
   def forward(self,input,y):
     master = self.relu1(input)
     master = nn.functional.interpolate(master,scale_factor=2)
     master = self.conv1(master)
-    print(master.device)
-    print(y.device)
     master = self.cbn(master,y)
     master = self.relu2(master)
     master = self.conv2(master)
@@ -115,7 +113,7 @@ class Discriminator(nn.Module):
       nn.Linear(512,128),
       nn.BatchNorm1d(128),
       nn.LeakyReLU(),
-      nn.Linear(128,1),
+      nn.Linear(128,1),#1->28
       nn.Tanh()
     )
 
@@ -148,12 +146,11 @@ class GeneratePosList(object):
     pos = []
     if isMacro:
       pos.append(self.macro_table[p])
-      return torch.LongTensor(pos)
     else:
       for i in range(int(np.sqrt(self.opt.micro_in_macro))):
         for j in range(int(np.sqrt(self.opt.micro_in_macro))):
           pos.append(self.macro_table[p]+i*self.wh+j)
-      return torch.LongTensor(pos)
+    return torch.LongTensor(pos)
 
 
 
