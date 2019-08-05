@@ -168,10 +168,10 @@ class COCOGAN(object):
     def save_network(self,epoch_label):
         save_filename = "%s_netG.pth"%epoch_label
         save_path = os.path.join(self.opt.my_model_dir,save_filename)
-        torch.save(self.G.cpu().state_dict(),save_path)
+        torch.save(self.G.state_dict(),save_path)
         save_filename = "%s_netD.pth"%epoch_label
         save_path = os.path.join(self.opt.my_model_dir,save_filename)
-        torch.save(self.D.cpu().state_dict(),save_path)
+        torch.save(self.D.state_dict(),save_path)
     def load_network(self,epoch_label):
         filename = "%s_netG.pth"%epoch_label
         filepath = os.path.join(self.opt.my_model_dir,filename)

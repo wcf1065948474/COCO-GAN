@@ -2,7 +2,19 @@ import torch
 import torch.nn as nn
 import numpy as np
 import option
+import time
 import matplotlib.pyplot as plt
+
+class Timer():
+  def __init__(self):
+    self.seconds = 32400
+    self.total_start_time = int(time.time())
+  def get_start_time(self):
+    self.start_time = int(time.time())
+  def get_end_time(self):
+    self.end_time = int(time.time())
+  def spend_time(self):
+    return self.end_time-self.start_time
 
 class ConditionalBatchNorm2d(nn.Module):
   def __init__(self,opt, num_features):

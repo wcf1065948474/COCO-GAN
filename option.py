@@ -1,6 +1,6 @@
 class Option(object):
     def __init__(self):
-        self.batchsize = 128
+        self.batchsize = 256
         self.latentsize = 100
         self.y_ebdsize = 28
         self.latentoutsize = 1024*2*2
