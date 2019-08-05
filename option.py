@@ -15,3 +15,4 @@ class Option(object):
         self.ALPHA = 100
         self.epoch = 50
         self.max_dataset = 10000
+        self.my_model_dir = 'my_model'

@@ -16,6 +16,32 @@ class Timer():
   def spend_time(self):
     return self.end_time-self.start_time
 
+class New_ConditionalBatchNorm2d(nn.Module):
+  def __init__(self,opt,num_features):
+    super().__init__()
+    self.opt = opt
+    inter_dim = 2*num_features
+    self.bn = nn.BatchNorm2d(num_features,affine=False)
+    self.gamma_mlp = nn.Sequential(
+      nn.Linear(2,inter_dim),
+      nn.ReLU(),
+      nn.Linear(inter_dim,num_features),
+      nn.ReLU()
+    )
+    self.beta_mlp = nn.Sequential(
+      nn.Linear(2,inter_dim),
+      nn.ReLU(),
+      nn.Linear(inter_dim,num_features),
+      nn.ReLU()
+    )
+  def forward(self,x,y):
+    out = self.bn(x)
+    gamma = self.gamma_mlp(y)
+    beta = self.beta_mlp(y)
+    out = gamma.view(self.opt.batchsize,num_features,1,1)*out + beta.view(self.opt.batchsize,num_features,1,1)
+    return out
+
+
 class ConditionalBatchNorm2d(nn.Module):
   def __init__(self,opt, num_features):
     super().__init__()
@@ -165,30 +191,81 @@ class GeneratePosList(object):
     return torch.LongTensor(pos)
 
 
+class Get_Latent_NewY(object):
+  def __init__(self,opt,patch_mode='micro',isParallel=False):
+    self.isParallel = isParallel
+    self.opt = opt
+    x = torch.linspace(-1,1,int(np.sqrt(opt.num_classes)))
+    x = x.view(-1,1)
+    x = x.expand(-1,int(np.sqrt(opt.num_classes)))
+    y = torch.linspace(-1,1,int(np.sqrt(opt.num_classes)))
+    y = y.view(1,-1)
+    y = y.expand(int(np.sqrt(opt.num_classes)),-1)
+    self.ebd = torch.stack((x,y),0)
+    self.ebd = self.ebd.view(2,-1)
+    self.wh = int(np.sqrt(opt.num_classes))
+    self.pos_table = torch.arange(opt.num_classes).view(self.wh,self.wh)
+    self.max_area = int(np.sqrt(opt.num_classes)-np.sqrt(opt.micro_in_macro)+1)
+    self.macro_table = self.pos_table[0:self.max_area,0:self.max_area]
+    self.macro_table = self.macro_table.contiguous().view(-1)
+  def get_latent(self):
+    self.z = np.random.normal(0.0,1.0,(self.opt.batchsize,126)).astype(np.float32)
+    if self.isParallel:  #并行生成macropatches
+      pass
+    self.z = torch.from_numpy(self.z)
+  def get_micro_list(self,pos):
+    self.pos_list = []
+    for i in range(int(np.sqrt(self.opt.micro_in_macro))):
+      for j in range(int(np.sqrt(self.opt.micro_in_macro))):
+        self.pos_list.append(self.macro_table[pos]+i*self.wh+j)
+  def get_ebdy(self,i):
+    if self.isParallel == False:
+      return self.ebd[:,self.pos_list[i]]
+    else:
+      pass
+  def get_latent_ebdy(self,i):
+    if self.isParallel == False:
+      ebdy = self.get_ebdy(i)
+      ebdy = ebdy.repeat(self.opt.batchsize,1)
+      return torch.cat((self.z,ebdy),1)
+    else:
+      pass
+
 
 if __name__ == '__main__':
   opt = option.Option()
-  opt.batchsize=16
-  G = Generator(opt)
-  D = Discriminator()
-  ebd = nn.Embedding(16,28)
-  y = torch.arange(16)
-  ebd_y = ebd(y)
+  gety = Get_Latent_NewY(opt)
+  gety.get_latent()
+  gety.get_micro_list(2)
+  tmp=gety.get_latent_ebdy(2)
+  print(tmp.size())
+  print(tmp[:5,126:])
 
-  z = torch.randn(1,100)
-  z = z.expand(16,-1)
-  z = torch.cat((z,ebd_y),1)
-  print(z.size())
-  G.eval()
-  D.eval()
-  a = G(z,y)
 
-  b,c = D(a,ebd_y)
-  a = a.detach().numpy()
-  a = a[0]
-  a = np.transpose(a,(1,2,0))
-  print(b,c)
-  plt.figure(figsize=(10,10))
-  plt.axis('off')
-  plt.imshow(a)
-  plt.show()
+
+# if __name__ == '__main__':
+#   opt = option.Option()
+#   opt.batchsize=16
+#   G = Generator(opt)
+#   D = Discriminator()
+#   ebd = nn.Embedding(16,28)
+#   y = torch.arange(16)
+#   ebd_y = ebd(y)
+
+#   z = torch.randn(1,100)
+#   z = z.expand(16,-1)
+#   z = torch.cat((z,ebd_y),1)
+#   print(z.size())
+#   G.eval()
+#   D.eval()
+#   a = G(z,y)
+
+#   b,c = D(a,ebd_y)
+#   a = a.detach().numpy()
+#   a = a[0]
+#   a = np.transpose(a,(1,2,0))
+#   print(b,c)
+#   plt.figure(figsize=(10,10))
+#   plt.axis('off')
+#   plt.imshow(a)
+#   plt.show()
