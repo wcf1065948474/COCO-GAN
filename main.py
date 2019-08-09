@@ -2,7 +2,6 @@ import train
 import dataset
 import option
 import torch
-import train
 import models
 
 opt = option.Option()

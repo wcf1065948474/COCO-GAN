@@ -1,48 +1,91 @@
 import torch
+import torch.nn as nn
 import option
 import models
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 
-class GetLatentY(object):
-    def __init__(self,opt):
-        self.opt = opt
-        self.ebd = torch.nn.Embedding(16,28)
-    def get_new_latent(self,isNew = False):
-        self.z = np.random.normal(0.0,1.0,(self.opt.batchsize,100)).astype(np.float32)
-        if isNew == False:
-            self.z = np.repeat(self.z,self.opt.micro_in_macro,0)
-        self.z = torch.from_numpy(self.z)
-    def get_ebd(self,y):
-        ebd_y = self.ebd(y)
-        ebd_y = ebd_y.expand(self.opt.batchsize,-1)
-        return ebd_y
-    def get_latent_y(self,y):
-        ebd_y = self.ebd(y)
-        ebd_y = ebd_y.repeat((self.opt.batchsize,1))
-        latent_y = torch.cat((self.z,ebd_y),1)
-        return latent_y,ebd_y
+# class GetLatentY(object):
+#     def __init__(self,opt):
+#         self.opt = opt
+#         self.ebd = torch.nn.Embedding(16,28)
+#     def get_new_latent(self,isNew = False):
+#         self.z = np.random.normal(0.0,1.0,(self.opt.batchsize,100)).astype(np.float32)
+#         if isNew == False:
+#             self.z = np.repeat(self.z,self.opt.micro_in_macro,0)
+#         self.z = torch.from_numpy(self.z)
+#     def get_ebd(self,y):
+#         ebd_y = self.ebd(y)
+#         ebd_y = ebd_y.expand(self.opt.batchsize,-1)
+#         return ebd_y
+#     def get_latent_y(self,y):
+#         ebd_y = self.ebd(y)
+#         ebd_y = ebd_y.repeat((self.opt.batchsize,1))
+#         latent_y = torch.cat((self.z,ebd_y),1)
+#         return latent_y,ebd_y
 
-class NewGetLatentY(object):
+# class NewGetLatentY(object):
+#     def __init__(self,opt):
+#         self.opt = opt
+#         self.ebd = torch.linspace(-1,1,steps=16,dtype=torch.float32)
+#     def get_new_latent(self,isNew = False):
+#         self.z = np.random.normal(0.0,1.0,(self.opt.batchsize,127)).astype(np.float32)
+#         if isNew == False:
+#             self.z = np.repeat(self.z,self.opt.micro_in_macro,0)
+#         self.z = torch.from_numpy(self.z)
+#     def get_ebd(self,y):
+#         y = torch.LongTensor(y)
+#         ebd_y = self.ebd(y).view(-1,1)
+#         ebd_y = ebd_y.expand(self.opt.batchsize,-1)
+#         return ebd_y
+#     def get_latent_y(self,y):
+#         y = torch.LongTensor(y)
+#         ebd_y = self.ebd(y).view(-1,1)
+#         ebd_y = ebd_y.repeat((self.opt.batchsize,1))
+#         latent_y = torch.cat((self.z,ebd_y),1)
+#         return latent_y,ebd_y
+
+
+class Get_Latent_Y(object):
     def __init__(self,opt):
         self.opt = opt
-        self.ebd = torch.linspace(-1,1,steps=16,dtype=torch.float32)
-    def get_new_latent(self,isNew = False):
-        self.z = np.random.normal(0.0,1.0,(self.opt.batchsize,127)).astype(np.float32)
-        if isNew == False:
-            self.z = np.repeat(self.z,self.opt.micro_in_macro,0)
+        x = torch.linspace(-1,1,int(np.sqrt(opt.num_classes)))
+        x = x.view(-1,1)
+        x = x.expand(-1,int(np.sqrt(opt.num_classes)))
+        y = torch.linspace(-1,1,int(np.sqrt(opt.num_classes)))
+        y = y.view(1,-1)
+        y = y.expand(int(np.sqrt(opt.num_classes)),-1)
+        self.ebd = torch.stack((x,y),0)
+        self.ebd = self.ebd.view(2,-1)
+        self.ebd.requires_grad_()
+        self.wh = int(np.sqrt(opt.num_classes))
+        self.pos_table = torch.arange(opt.num_classes).view(self.wh,self.wh)
+        self.max_area = int(np.sqrt(opt.num_classes)-np.sqrt(opt.micro_in_macro)+1)
+        self.macro_table = self.pos_table[0:self.max_area,0:self.max_area]
+        self.macro_table = self.macro_table.contiguous().view(-1)
+    def get_latent(self):
+        self.z = np.random.normal(0.0,1.0,(self.opt.batchsize,126)).astype(np.float32)
+        self.z = np.tile(self.z,(self.opt.micro_in_macro,1))
         self.z = torch.from_numpy(self.z)
-    def get_ebd(self,y):
-        y = torch.LongTensor(y)
-        ebd_y = self.ebd(y).view(-1,1)
-        ebd_y = ebd_y.expand(self.opt.batchsize,-1)
-        return ebd_y
-    def get_latent_y(self,y):
-        y = torch.LongTensor(y)
-        ebd_y = self.ebd(y).view(-1,1)
-        ebd_y = ebd_y.repeat((self.opt.batchsize,1))
-        latent_y = torch.cat((self.z,ebd_y),1)
-        return latent_y,ebd_y
+
+    def get_ebdy(self,pos,mode='micro'):
+        if mode == 'micro':
+            pos_list = []
+            for i in range(int(np.sqrt(self.opt.micro_in_macro))):
+                for j in range(int(np.sqrt(self.opt.micro_in_macro))):
+                    pos_list.append(self.macro_table[pos]+i*self.wh+j)
+            ebdy = self.ebd[:,pos_list]
+            ebdy = torch.transpose(ebdy,0,1)
+        else:
+            ebdy = self.ebd[:,self.macro_table[pos]].view(2,1)
+            ebdy = torch.transpose(ebdy,0,1)
+        ebdy = np.repeat(ebdy,self.opt.batchsize,0)
+        return ebdy
+
+    def get_latent_ebdy(self,pos):
+        ebdy = self.get_ebdy(pos)
+        return torch.cat((self.z,ebdy),1),ebdy
 
 class COCOGAN(object):
     def __init__(self,opt):
@@ -50,14 +93,15 @@ class COCOGAN(object):
         self.G = models.Generator(opt)
         self.D = models.Discriminator()
         self.Lsloss = torch.nn.MSELoss()
-        self.optimizerG = torch.optim.SparseAdam(self.G.parameters(),1e-4,(0,0.999))
-        self.optimizerD = torch.optim.SparseAdam(self.D.parameters(),4e-4,(0,0.999))
+        self.optimizerG = torch.optim.Adam(self.G.parameters(),1e-4,(0,0.999))
+        self.optimizerD = torch.optim.Adam(self.D.parameters(),4e-4,(0,0.999))
         self.d_losses = []
         self.g_losses = []
         self.G.cuda()
         self.D.cuda()
         self.G.apply(self.weights_init)
         self.D.apply(self.weights_init)
+        self.latent_ebdy_generator = Get_Latent_Y(opt)
     def weights_init(self,m):
         classname = m.__class__.__name__
         if classname.find('Conv') != -1:
@@ -68,19 +112,29 @@ class COCOGAN(object):
                     nn.init.normal_(m.weight.data, 1.0, 0.02)
                     nn.init.constant_(m.bias.data, 0)
 
+    # def macro_from_micro(self,micro):
+    #     hw = int(np.sqrt(self.opt.micro_in_macro))#macro每行每列有多少micro
+    #     batchs = int(micro.size(0)/self.opt.micro_in_macro)#macro的batchs
+    #     spatial = int(self.opt.micro_size*hw)#macro的分辨率
+    #     macros = torch.empty((batchs,3,spatial,spatial),dtype=micro.dtype)
+    #     for b in range(batchs):
+    #         bb = b*self.opt.micro_in_macro
+    #         for i in range(hw):
+    #             ii = i*self.opt.micro_size
+    #             for j in range(hw):
+    #                 jj = j*self.opt.micro_size
+    #                 macros[b,:,ii:ii+self.opt.micro_size,jj:jj+self.opt.micro_size] = micro[bb+hw*i+j].clone()
+    #     return macros.cuda()
+
     def macro_from_micro(self,micro):
-        hw = int(np.sqrt(self.opt.micro_in_macro))#macro每行每列有多少micro
-        batchs = int(micro.size(0)/self.opt.micro_in_macro)#macro的batchs
-        spatial = int(self.opt.micro_size*hw)#macro的分辨率
-        macros = torch.empty((batchs,3,spatial,spatial),dtype=micro.dtype)
-        for b in range(batchs):
-            bb = b*self.opt.micro_in_macro
-            for i in range(hw):
-                ii = i*self.opt.micro_size
-                for j in range(hw):
-                    jj = j*self.opt.micro_size
-                    macros[b,:,ii:ii+self.opt.micro_size,jj:jj+self.opt.micro_size] = micro[bb+hw*i+j].clone()
-        return macros.cuda()
+        microlist = []
+        macrolist = []
+        hw = int(np.sqrt(self.opt.micro_in_macro))
+        for i in range(self.opt.micro_in_macro):
+            microlist.append(micro[i*self.opt.batchsize:i*self.opt.batchsize+self.opt.batchsize])
+        for j in range(hw):
+            macrolist.append(torch.cat(microlist[j*hw:j*hw+hw],3))
+        return torch.cat(macrolist,2)
     def calc_gradient_penalty(self,real_data,fake_data,ebd_y):
         #print real_data.size()
         alpha = torch.rand(self.opt.batchsize, 1,1,1)
@@ -101,10 +155,10 @@ class COCOGAN(object):
         gradient_penalty = (gradients[0].norm(2,dim=1)-1)**2+((gradients[1].norm(2,dim=1)-1)**2).view(self.opt.batchsize,1,1)
         return gradient_penalty.mean()*self.opt.LAMBDA
 
-    def forward(self,latent_y,y):
-        latent_y = latent_y.cuda()
-        y = y.cuda()
-        micro_patches = self.G(latent_y,y)
+    def forward(self,latent_ebdy,ebdy):
+        latent_ebdy = latent_ebdy.cuda()
+        ebdy = ebdy.cuda()
+        micro_patches = self.G(latent_ebdy,ebdy)
         self.macro_patches = self.macro_from_micro(micro_patches)
     def forward_new(self,latent_y,y):
         assert y is list
@@ -130,7 +184,7 @@ class COCOGAN(object):
         realD,realDH = self.D(x,ebd_y)#y有问题！
         gradient_penalty = self.calc_gradient_penalty(x,macro_p,ebd_y)
         d_loss = fakeD.mean()-realD.mean()+gradient_penalty+self.opt.ALPHA*self.Lsloss(realDH,ebd_y)
-        d_loss.backward(retain_graph=True)
+        d_loss.backward()
         self.optimizerD.step()
         self.d_losses.append(d_loss.item())
         #update G()
@@ -197,6 +251,14 @@ class COCOGAN(object):
         
 
 
+
+if __name__ == "__main__":
+    opt = option.Option()
+    opt.batchsize=2
+    g = Get_Latent_Y(opt)
+    g.get_latent()
+    y = g.get_ebdy(5,'f')
+    print(type(y))
 
 
 

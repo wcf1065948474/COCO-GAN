@@ -16,48 +16,49 @@ class Timer():
   def spend_time(self):
     return self.end_time-self.start_time
 
-class New_ConditionalBatchNorm2d(nn.Module):
+class ConditionalBatchNorm2d(nn.Module):
   def __init__(self,opt,num_features):
     super().__init__()
     self.opt = opt
+    self.num_features = num_features
     inter_dim = 2*num_features
     self.bn = nn.BatchNorm2d(num_features,affine=False)
     self.gamma_mlp = nn.Sequential(
-      nn.Linear(2,inter_dim),
+      nn.utils.spectral_norm(nn.Linear(2,inter_dim)),
       nn.ReLU(),
-      nn.Linear(inter_dim,num_features),
+      nn.utils.spectral_norm(nn.Linear(inter_dim,num_features)),
       nn.ReLU()
     )
     self.beta_mlp = nn.Sequential(
-      nn.Linear(2,inter_dim),
+      nn.utils.spectral_norm(nn.Linear(2,inter_dim)),
       nn.ReLU(),
-      nn.Linear(inter_dim,num_features),
+      nn.utils.spectral_norm(nn.Linear(inter_dim,num_features)),
       nn.ReLU()
     )
   def forward(self,x,y):
     out = self.bn(x)
     gamma = self.gamma_mlp(y)
     beta = self.beta_mlp(y)
-    out = gamma.view(self.opt.batchsize,num_features,1,1)*out + beta.view(self.opt.batchsize,num_features,1,1)
+    out = gamma.view(self.opt.batchsize,self.num_features,1,1)*out + beta.view(self.opt.batchsize,self.num_features,1,1)
     return out
 
 
-class ConditionalBatchNorm2d(nn.Module):
-  def __init__(self,opt, num_features):
-    super().__init__()
-    self.opt = opt
-    self.num_features = num_features
-    self.bn = nn.BatchNorm2d(num_features, affine=False)
-    self.embed = nn.Embedding(opt.num_classes, num_features * 2)
-    self.embed.weight.data[:, :num_features].normal_(1, 0.02)  # Initialise scale at N(1, 0.02)
-    self.embed.weight.data[:, num_features:].zero_()  # Initialise bias at 0
+# class ConditionalBatchNorm2d_OLD(nn.Module):
+#   def __init__(self,opt, num_features):
+#     super().__init__()
+#     self.opt = opt
+#     self.num_features = num_features
+#     self.bn = nn.BatchNorm2d(num_features, affine=False)
+#     self.embed = nn.Embedding(opt.num_classes, num_features * 2)
+#     self.embed.weight.data[:, :num_features].normal_(1, 0.02)  # Initialise scale at N(1, 0.02)
+#     self.embed.weight.data[:, num_features:].zero_()  # Initialise bias at 0
 
-  def forward(self, x, y):
-    out = self.bn(x)
-    ebd_y = self.embed(y).reapt((self.opt.batchsize,1))
-    gamma, beta = ebd_y.chunk(2, 1)
-    out = gamma.view(-1, self.num_features, 1, 1) * out + beta.view(-1, self.num_features, 1, 1)
-    return out
+#   def forward(self, x, y):
+#     out = self.bn(x)
+#     ebd_y = self.embed(y).reapt((self.opt.batchsize,1))
+#     gamma, beta = ebd_y.chunk(2, 1)
+#     out = gamma.view(-1, self.num_features, 1, 1) * out + beta.view(-1, self.num_features, 1, 1)
+#     return out
 
 class GeneratorResidualBlock(nn.Module):
   def __init__(self,opt,input_channel,output_channel):
@@ -66,9 +67,9 @@ class GeneratorResidualBlock(nn.Module):
     self.relu2 = nn.ReLU()
     # self.upscale = nn.Upsample(scale_factor=2)
     # self.upscale_branch = nn.Upsample(scale_factor=2)
-    self.conv1 = nn.Conv2d(input_channel,output_channel,3,padding=1)
-    self.conv2 = nn.Conv2d(output_channel,output_channel,3,padding=1)
-    self.conv_branch = nn.Conv2d(input_channel,output_channel,3,padding=1)
+    self.conv1 = nn.utils.spectral_norm(nn.Conv2d(input_channel,output_channel,3,padding=1))
+    self.conv2 = nn.utils.spectral_norm(nn.Conv2d(output_channel,output_channel,3,padding=1))
+    self.conv_branch = nn.utils.spectral_norm(nn.Conv2d(input_channel,output_channel,3,padding=1))
     self.cbn = ConditionalBatchNorm2d(opt,output_channel)
 
   def forward(self,input,y):
@@ -87,15 +88,15 @@ class Generator(nn.Module):
   def __init__(self,opt):
     super().__init__()
     self.opt = opt
-    self.linear = nn.Linear(opt.latentsize+opt.y_ebdsize,opt.latentoutsize)
+    self.linear = nn.utils.spectral_norm(nn.Linear(opt.latentsize+opt.y_ebdsize,opt.latentoutsize))
     self.grb1 = GeneratorResidualBlock(opt,1024,512)
     self.grb2 = GeneratorResidualBlock(opt,512,256)
     self.grb3 = GeneratorResidualBlock(opt,256,128)
     self.grb4 = GeneratorResidualBlock(opt,128,64)
     self.model = nn.Sequential(
-      nn.BatchNorm2d(64),
+      nn.utils.spectral_norm(nn.BatchNorm2d(64)),
       nn.ReLU(),
-      nn.Conv2d(64,3,3,padding=1),
+      nn.utils.spectral_norm(nn.Conv2d(64,3,3,padding=1)),
       nn.Tanh()
     )
   def forward(self,input,y):
@@ -114,9 +115,9 @@ class DiscriminatorResidualBlock(nn.Module):
     self.pooling = pooling
     self.relu1 = nn.ReLU()
     self.relu2 = nn.ReLU()
-    self.conv1 = nn.Conv2d(input_channel,output_channel,3,padding=1)
-    self.conv2 = nn.Conv2d(output_channel,output_channel,3,padding=1)
-    self.conv_branch = nn.Conv2d(input_channel,output_channel,3,padding=1)
+    self.conv1 = nn.utils.spectral_norm(nn.Conv2d(input_channel,output_channel,3,padding=1))
+    self.conv2 = nn.utils.spectral_norm(nn.Conv2d(output_channel,output_channel,3,padding=1))
+    self.conv_branch = nn.utils.spectral_norm(nn.Conv2d(input_channel,output_channel,3,padding=1))
     if self.pooling == True:
       self.avg_pool = nn.AvgPool2d(2,2)
       self.avg_pool_branch = nn.AvgPool2d(2,2)
@@ -144,14 +145,14 @@ class Discriminator(nn.Module):
     self.drb5 = DiscriminatorResidualBlock(512,512,False)
     self.relu = nn.ReLU()
     self.glb_pool = nn.AdaptiveMaxPool2d(1)
-    self.linear = nn.Linear(512,1)
-    self.linear_branch = nn.Linear(28,512)
+    self.linear = nn.utils.spectral_norm(nn.Linear(512,1))
+    self.linear_branch = nn.utils.spectral_norm(nn.Linear(2,512))
     self.dah = nn.Sequential(
-      nn.BatchNorm1d(512),
-      nn.Linear(512,128),
+      nn.utils.spectral_norm(nn.BatchNorm1d(512)),
+      nn.utils.spectral_norm(nn.Linear(512,128)),
       nn.BatchNorm1d(128),
       nn.LeakyReLU(),
-      nn.Linear(128,1),#1->28
+      nn.utils.spectral_norm(nn.Linear(128,2)),#1->28
       nn.Tanh()
     )
 
@@ -172,74 +173,36 @@ class Discriminator(nn.Module):
     return master+projection,h
 
 
-class GeneratePosList(object):
-  def __init__(self,opt):
-    self.opt=opt
-    self.wh = int(np.sqrt(opt.num_classes))
-    self.pos_table = torch.arange(opt.num_classes).view(self.wh,self.wh)
-    self.max_area = int(np.sqrt(opt.num_classes)-np.sqrt(opt.micro_in_macro)+1)
-    self.macro_table = self.pos_table[0:self.max_area,0:self.max_area]
-    self.macro_table = self.macro_table.contiguous().view(-1)
-  def get_pos_list(self,p,isMacro=True):
-    pos = []
-    if isMacro:
-      pos.append(self.macro_table[p])
-    else:
-      for i in range(int(np.sqrt(self.opt.micro_in_macro))):
-        for j in range(int(np.sqrt(self.opt.micro_in_macro))):
-          pos.append(self.macro_table[p]+i*self.wh+j)
-    return torch.LongTensor(pos)
+# class GeneratePosList(object):
+#   def __init__(self,opt):
+#     self.opt=opt
+#     self.wh = int(np.sqrt(opt.num_classes))
+#     self.pos_table = torch.arange(opt.num_classes).view(self.wh,self.wh)
+#     self.max_area = int(np.sqrt(opt.num_classes)-np.sqrt(opt.micro_in_macro)+1)
+#     self.macro_table = self.pos_table[0:self.max_area,0:self.max_area]
+#     self.macro_table = self.macro_table.contiguous().view(-1)
+#   def get_pos_list(self,p,isMacro=True):
+#     pos = []
+#     if isMacro:
+#       pos.append(self.macro_table[p])
+#     else:
+#       for i in range(int(np.sqrt(self.opt.micro_in_macro))):
+#         for j in range(int(np.sqrt(self.opt.micro_in_macro))):
+#           pos.append(self.macro_table[p]+i*self.wh+j)
+#     return torch.LongTensor(pos)
 
 
-class Get_Latent_NewY(object):
-  def __init__(self,opt,patch_mode='micro',isParallel=False):
-    self.isParallel = isParallel
-    self.opt = opt
-    x = torch.linspace(-1,1,int(np.sqrt(opt.num_classes)))
-    x = x.view(-1,1)
-    x = x.expand(-1,int(np.sqrt(opt.num_classes)))
-    y = torch.linspace(-1,1,int(np.sqrt(opt.num_classes)))
-    y = y.view(1,-1)
-    y = y.expand(int(np.sqrt(opt.num_classes)),-1)
-    self.ebd = torch.stack((x,y),0)
-    self.ebd = self.ebd.view(2,-1)
-    self.wh = int(np.sqrt(opt.num_classes))
-    self.pos_table = torch.arange(opt.num_classes).view(self.wh,self.wh)
-    self.max_area = int(np.sqrt(opt.num_classes)-np.sqrt(opt.micro_in_macro)+1)
-    self.macro_table = self.pos_table[0:self.max_area,0:self.max_area]
-    self.macro_table = self.macro_table.contiguous().view(-1)
-  def get_latent(self):
-    self.z = np.random.normal(0.0,1.0,(self.opt.batchsize,126)).astype(np.float32)
-    if self.isParallel:  #并行生成macropatches
-      pass
-    self.z = torch.from_numpy(self.z)
-  def get_micro_list(self,pos):
-    self.pos_list = []
-    for i in range(int(np.sqrt(self.opt.micro_in_macro))):
-      for j in range(int(np.sqrt(self.opt.micro_in_macro))):
-        self.pos_list.append(self.macro_table[pos]+i*self.wh+j)
-  def get_ebdy(self,i):
-    if self.isParallel == False:
-      return self.ebd[:,self.pos_list[i]]
-    else:
-      pass
-  def get_latent_ebdy(self,i):
-    if self.isParallel == False:
-      ebdy = self.get_ebdy(i)
-      ebdy = ebdy.repeat(self.opt.batchsize,1)
-      return torch.cat((self.z,ebdy),1)
-    else:
-      pass
 
 
-if __name__ == '__main__':
-  opt = option.Option()
-  gety = Get_Latent_NewY(opt)
-  gety.get_latent()
-  gety.get_micro_list(2)
-  tmp=gety.get_latent_ebdy(2)
-  print(tmp.size())
-  print(tmp[:5,126:])
+
+# if __name__ == '__main__':
+#   opt = option.Option()
+#   gety = Get_Latent_NewY(opt)
+#   gety.get_latent()
+#   gety.get_micro_list(2)
+#   tmp=gety.get_latent_ebdy(2)
+#   print(tmp.size())
+#   print(tmp[:5,126:])
 
 
 
