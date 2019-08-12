@@ -24,13 +24,13 @@ class ConditionalBatchNorm2d(nn.Module):
     inter_dim = 2*num_features
     self.bn = nn.BatchNorm2d(num_features,affine=False)
     self.gamma_mlp = nn.Sequential(
-      nn.utils.spectral_norm(nn.Linear(2,inter_dim)),
+      nn.utils.spectral_norm(nn.Linear(128,inter_dim)),
       nn.ReLU(),
       nn.utils.spectral_norm(nn.Linear(inter_dim,num_features)),
       nn.ReLU()
     )
     self.beta_mlp = nn.Sequential(
-      nn.utils.spectral_norm(nn.Linear(2,inter_dim)),
+      nn.utils.spectral_norm(nn.Linear(128,inter_dim)),
       nn.ReLU(),
       nn.utils.spectral_norm(nn.Linear(inter_dim,num_features)),
       nn.ReLU()
@@ -39,7 +39,7 @@ class ConditionalBatchNorm2d(nn.Module):
     out = self.bn(x)
     gamma = self.gamma_mlp(y)
     beta = self.beta_mlp(y)
-    out = gamma.view(self.opt.batchsize,self.num_features,1,1)*out + beta.view(self.opt.batchsize,self.num_features,1,1)
+    out = gamma.view(self.opt.batchsize*self.opt.micro_in_macro,self.num_features,1,1)*out + beta.view(self.opt.batchsize*self.opt.micro_in_macro,self.num_features,1,1)
     return out
 
 
