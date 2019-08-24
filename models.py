@@ -39,7 +39,7 @@ class ConditionalBatchNorm2d(nn.Module):
     out = self.bn(x)
     gamma = self.gamma_mlp(y)
     beta = self.beta_mlp(y)
-    out = gamma.view(self.opt.batchsize*self.opt.micro_in_macro,self.num_features,1,1)*out + beta.view(self.opt.batchsize*self.opt.micro_in_macro,self.num_features,1,1)
+    out = gamma.view(-1,self.num_features,1,1)*out + beta.view(-1,self.num_features,1,1)
     return out
 
 
@@ -94,14 +94,14 @@ class Generator(nn.Module):
     self.grb3 = GeneratorResidualBlock(opt,256,128)
     self.grb4 = GeneratorResidualBlock(opt,128,64)
     self.model = nn.Sequential(
-      nn.utils.spectral_norm(nn.BatchNorm2d(64)),
+      nn.BatchNorm2d(64),
       nn.ReLU(),
       nn.utils.spectral_norm(nn.Conv2d(64,3,3,padding=1)),
       nn.Tanh()
     )
   def forward(self,input,y):
     res = self.linear(input)
-    res = res.view(self.opt.batchsize*self.opt.micro_in_macro,1024,2,2)
+    res = res.view(-1,1024,2,2)
     res = self.grb1(res,y)
     res = self.grb2(res,y)
     res = self.grb3(res,y)
