@@ -148,7 +148,7 @@ class Discriminator(nn.Module):
     self.linear = nn.utils.spectral_norm(nn.Linear(512,1))
     self.linear_branch = nn.utils.spectral_norm(nn.Linear(2,512))
     self.dah = nn.Sequential(
-      nn.utils.spectral_norm(nn.BatchNorm1d(512)),
+      nn.BatchNorm1d(512),
       nn.utils.spectral_norm(nn.Linear(512,128)),
       nn.BatchNorm1d(128),
       nn.LeakyReLU(),

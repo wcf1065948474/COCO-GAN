@@ -48,34 +48,34 @@ from matplotlib.lines import Line2D
 #         return latent_y,ebd_y
 
 
-def plot_grad_flow(named_parameters):
-    '''Plots the gradients flowing through different layers in the net during training.
-    Can be used for checking for possible gradient vanishing / exploding problems.
+# def plot_grad_flow(named_parameters):
+#     '''Plots the gradients flowing through different layers in the net during training.
+#     Can be used for checking for possible gradient vanishing / exploding problems.
     
-    Usage: Plug this function in Trainer class after loss.backwards() as 
-    "plot_grad_flow(self.model.named_parameters())" to visualize the gradient flow'''
-    ave_grads = []
-    max_grads= []
-    layers = []
-    for n, p in named_parameters:
-        if(p.requires_grad) and ("bias" not in n):
-            layers.append(n)
-            ave_grads.append(p.grad.abs().mean())
-            max_grads.append(p.grad.abs().max())
-    plt.bar(np.arange(len(max_grads)), max_grads, alpha=0.1, lw=1, color="c")
-    plt.bar(np.arange(len(max_grads)), ave_grads, alpha=0.1, lw=1, color="b")
-    plt.hlines(0, 0, len(ave_grads)+1, lw=2, color="k" )
-    plt.xticks(range(0,len(ave_grads), 1), layers, rotation="vertical")
-    plt.xlim(left=0, right=len(ave_grads))
-    plt.ylim(bottom = -0.001, top=0.02) # zoom in on the lower gradient regions
-    plt.xlabel("Layers")
-    plt.ylabel("average gradient")
-    plt.title("Gradient flow")
-    plt.grid(True)
-    plt.legend([Line2D([0], [0], color="c", lw=4),
-                Line2D([0], [0], color="b", lw=4),
-                Line2D([0], [0], color="k", lw=4)], ['max-gradient', 'mean-gradient', 'zero-gradient'])
-    plt.show()
+#     Usage: Plug this function in Trainer class after loss.backwards() as 
+#     "plot_grad_flow(self.model.named_parameters())" to visualize the gradient flow'''
+#     ave_grads = []
+#     max_grads= []
+#     layers = []
+#     for n, p in named_parameters:
+#         if(p.requires_grad) and ("bias" not in n):
+#             layers.append(n)
+#             ave_grads.append(p.grad.abs().mean())
+#             max_grads.append(p.grad.abs().max())
+#     plt.bar(np.arange(len(max_grads)), max_grads, alpha=0.1, lw=1, color="c")
+#     plt.bar(np.arange(len(max_grads)), ave_grads, alpha=0.1, lw=1, color="b")
+#     plt.hlines(0, 0, len(ave_grads)+1, lw=2, color="k" )
+#     plt.xticks(range(0,len(ave_grads), 1), layers, rotation="vertical")
+#     plt.xlim(left=0, right=len(ave_grads))
+#     plt.ylim(bottom = -0.001, top=0.02) # zoom in on the lower gradient regions
+#     plt.xlabel("Layers")
+#     plt.ylabel("average gradient")
+#     plt.title("Gradient flow")
+#     plt.grid(True)
+#     plt.legend([Line2D([0], [0], color="c", lw=4),
+#                 Line2D([0], [0], color="b", lw=4),
+#                 Line2D([0], [0], color="k", lw=4)], ['max-gradient', 'mean-gradient', 'zero-gradient'])
+#     plt.show()
 
 def plot_grad_flow(named_parameters):
     ave_grads = []
@@ -87,7 +87,7 @@ def plot_grad_flow(named_parameters):
     plt.plot(ave_grads, alpha=0.3, color="b")
     plt.hlines(0, 0, len(ave_grads)+1, linewidth=1, color="k" )
     plt.xticks(range(0,len(ave_grads), 1), layers, rotation="vertical")
-    plt.xlim(xmin=0, xmax=len(ave_grads))
+    plt.xlim(left=0, right=len(ave_grads))
     plt.xlabel("Layers")
     plt.ylabel("average gradient")
     plt.title("Gradient flow")
@@ -110,9 +110,14 @@ class Get_Latent_Y(object):
         self.max_area = int(np.sqrt(opt.num_classes)-np.sqrt(opt.micro_in_macro)+1)
         self.macro_table = self.pos_table[0:self.max_area,0:self.max_area]
         self.macro_table = self.macro_table.contiguous().view(-1)
+    # def get_latent(self):
+    #     self.z = np.random.normal(0.0,1.0,(self.opt.batchsize,126)).astype(np.float32)
+    #     self.z = np.tile(self.z,(self.opt.micro_in_macro,1))
+    #     self.z = torch.from_numpy(self.z)
+
     def get_latent(self):
-        self.z = np.random.normal(0.0,1.0,(self.opt.batchsize,126)).astype(np.float32)
-        self.z = np.tile(self.z,(self.opt.micro_in_macro,1))
+        self.z = np.random.normal(0.0,1.0,(1,126)).astype(np.float32)
+        self.z = np.tile(self.z,(self.opt.batchsize,1))
         self.z = torch.from_numpy(self.z)
 
     def get_ebdy(self,pos,mode='micro'):
@@ -130,7 +135,8 @@ class Get_Latent_Y(object):
         return ebdy
 
     def get_latent_ebdy(self,pos):
-        ebdy = self.get_ebdy(pos)
+        # ebdy = self.get_ebdy(pos)
+        ebdy = self.get_ebdy(pos,'macro')
         return torch.cat((self.z,ebdy),1),ebdy
 
 class COCOGAN(object):
@@ -265,6 +271,30 @@ class COCOGAN(object):
         #update G()
         self.G.zero_grad()
         realG,realGH = self.D(self.macro_patches,ebd_y)#y有问题!
+        g_loss = -realG.mean()+self.opt.ALPHA*self.Lsloss(realGH,ebd_y)
+        g_loss.backward()
+        self.optimizerG.step()
+        self.g_losses.append(g_loss.item())
+    def train_micro(self,x,epoch,pos):
+        latent_ebdy,_ = self.latent_ebdy_generator.get_latent_ebdy(pos)
+        latent_ebdy = latent_ebdy.cuda()
+        self.micro_patches = self.G(latent_ebdy,latent_ebdy)
+        #update D()
+        x = x.cuda()
+        ebd_y = self.latent_ebdy_generator.get_ebdy(pos,'macro')
+        ebd_y = ebd_y.cuda()
+        self.D.zero_grad()
+        micro_data = self.micro_patches.detach()
+        fakeD,fakeDH = self.D(micro_data,ebd_y)
+        realD,realDH = self.D(x,ebd_y)
+        gradient_penalty = self.calc_gradient_penalty(x,micro_data,ebd_y)
+        d_loss = fakeD.mean()-realD.mean()+self.opt.ALPHA*(self.Lsloss(realDH,ebd_y)+self.Lsloss(fakeDH,ebd_y))+gradient_penalty
+        d_loss.backward()
+        self.optimizerD.step()
+        self.d_losses.append(d_loss.item())
+        #update G()
+        self.G.zero_grad()
+        realG,realGH = self.D(self.micro_patches,ebd_y)#y有问题!
         g_loss = -realG.mean()+self.opt.ALPHA*self.Lsloss(realGH,ebd_y)
         g_loss.backward()
         self.optimizerG.step()
