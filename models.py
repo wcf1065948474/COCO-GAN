@@ -17,9 +17,8 @@ class Timer():
     return self.end_time-self.start_time
 
 class ConditionalBatchNorm2d(nn.Module):
-  def __init__(self,opt,num_features):
+  def __init__(self,num_features):
     super().__init__()
-    self.opt = opt
     self.num_features = num_features
     inter_dim = 2*num_features
     self.bn = nn.BatchNorm2d(num_features,affine=False)
