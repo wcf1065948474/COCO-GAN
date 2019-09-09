@@ -24,16 +24,14 @@ class ConditionalBatchNorm2d(nn.Module):
     inter_dim = 2*num_features
     self.bn = nn.BatchNorm2d(num_features,affine=False)
     self.gamma_mlp = nn.Sequential(
-      nn.utils.spectral_norm(nn.Linear(128,inter_dim)),
+      nn.Linear(128,inter_dim),
       nn.ReLU(),
-      nn.utils.spectral_norm(nn.Linear(inter_dim,num_features)),
-      nn.ReLU()
+      nn.Linear(inter_dim,num_features)
     )
     self.beta_mlp = nn.Sequential(
-      nn.utils.spectral_norm(nn.Linear(128,inter_dim)),
+      nn.Linear(128,inter_dim),
       nn.ReLU(),
-      nn.utils.spectral_norm(nn.Linear(inter_dim,num_features)),
-      nn.ReLU()
+      nn.Linear(inter_dim,num_features)
     )
   def forward(self,x,y):
     out = self.bn(x)
@@ -65,21 +63,21 @@ class GeneratorResidualBlock(nn.Module):
     super().__init__()
     self.relu1 = nn.ReLU()
     self.relu2 = nn.ReLU()
-    # self.upscale = nn.Upsample(scale_factor=2)
-    # self.upscale_branch = nn.Upsample(scale_factor=2)
+    self.upscale = nn.utils.spectral_norm(nn.ConvTranspose2d(input_channel, input_channel, 4, 2, 1))
+    self.upscale_branch = nn.utils.spectral_norm(nn.ConvTranspose2d(input_channel, input_channel, 4, 2, 1))
     self.conv1 = nn.utils.spectral_norm(nn.Conv2d(input_channel,output_channel,3,padding=1))
     self.conv2 = nn.utils.spectral_norm(nn.Conv2d(output_channel,output_channel,3,padding=1))
     self.conv_branch = nn.utils.spectral_norm(nn.Conv2d(input_channel,output_channel,3,padding=1))
-    self.cbn = ConditionalBatchNorm2d(opt,output_channel)
+    self.cbn = ConditionalBatchNorm2d(output_channel)
 
   def forward(self,input,y):
     master = self.relu1(input)
-    master = nn.functional.interpolate(master,scale_factor=2)
+    master = self.upscale(master)
     master = self.conv1(master)
     master = self.cbn(master,y)
     master = self.relu2(master)
     master = self.conv2(master)
-    branch = nn.functional.interpolate(input,scale_factor=2)
+    branch = self.upscale_branch(input)
     branch = self.conv_branch(branch)
     return master+branch
 
@@ -88,7 +86,7 @@ class Generator(nn.Module):
   def __init__(self,opt):
     super().__init__()
     self.opt = opt
-    self.linear = nn.utils.spectral_norm(nn.Linear(opt.latentsize+opt.y_ebdsize,opt.latentoutsize))
+    self.linear = nn.Linear(opt.latentsize+opt.y_ebdsize,opt.latentoutsize)
     self.grb1 = GeneratorResidualBlock(opt,1024,512)
     self.grb2 = GeneratorResidualBlock(opt,512,256)
     self.grb3 = GeneratorResidualBlock(opt,256,128)
@@ -145,14 +143,14 @@ class Discriminator(nn.Module):
     self.drb5 = DiscriminatorResidualBlock(512,512,False)
     self.relu = nn.ReLU()
     self.glb_pool = nn.AdaptiveMaxPool2d(1)
-    self.linear = nn.utils.spectral_norm(nn.Linear(512,1))
-    self.linear_branch = nn.utils.spectral_norm(nn.Linear(2,512))
+    self.linear = nn.Linear(512,1)
+    self.linear_branch = nn.Linear(2,512)
     self.dah = nn.Sequential(
       nn.BatchNorm1d(512),
-      nn.utils.spectral_norm(nn.Linear(512,128)),
+      nn.Linear(512,128),
       nn.BatchNorm1d(128),
       nn.LeakyReLU(),
-      nn.utils.spectral_norm(nn.Linear(128,2)),#1->28
+      nn.Linear(128,2),#1->28
       nn.Tanh()
     )
 
@@ -168,67 +166,8 @@ class Discriminator(nn.Module):
     h = self.dah(master)
     projection = self.linear_branch(y)
     projection = projection*master
-    projection = torch.sum(projection,1,True)/512.0
+    projection = torch.sum(projection,1,True)
     master = self.linear(master)
     return master+projection,h
 
 
-# class GeneratePosList(object):
-#   def __init__(self,opt):
-#     self.opt=opt
-#     self.wh = int(np.sqrt(opt.num_classes))
-#     self.pos_table = torch.arange(opt.num_classes).view(self.wh,self.wh)
-#     self.max_area = int(np.sqrt(opt.num_classes)-np.sqrt(opt.micro_in_macro)+1)
-#     self.macro_table = self.pos_table[0:self.max_area,0:self.max_area]
-#     self.macro_table = self.macro_table.contiguous().view(-1)
-#   def get_pos_list(self,p,isMacro=True):
-#     pos = []
-#     if isMacro:
-#       pos.append(self.macro_table[p])
-#     else:
-#       for i in range(int(np.sqrt(self.opt.micro_in_macro))):
-#         for j in range(int(np.sqrt(self.opt.micro_in_macro))):
-#           pos.append(self.macro_table[p]+i*self.wh+j)
-#     return torch.LongTensor(pos)
-
-
-
-
-
-# if __name__ == '__main__':
-#   opt = option.Option()
-#   gety = Get_Latent_NewY(opt)
-#   gety.get_latent()
-#   gety.get_micro_list(2)
-#   tmp=gety.get_latent_ebdy(2)
-#   print(tmp.size())
-#   print(tmp[:5,126:])
-
-
-
-# if __name__ == '__main__':
-#   opt = option.Option()
-#   opt.batchsize=16
-#   G = Generator(opt)
-#   D = Discriminator()
-#   ebd = nn.Embedding(16,28)
-#   y = torch.arange(16)
-#   ebd_y = ebd(y)
-
-#   z = torch.randn(1,100)
-#   z = z.expand(16,-1)
-#   z = torch.cat((z,ebd_y),1)
-#   print(z.size())
-#   G.eval()
-#   D.eval()
-#   a = G(z,y)
-
-#   b,c = D(a,ebd_y)
-#   a = a.detach().numpy()
-#   a = a[0]
-#   a = np.transpose(a,(1,2,0))
-#   print(b,c)
-#   plt.figure(figsize=(10,10))
-#   plt.axis('off')
-#   plt.imshow(a)
-#   plt.show()
