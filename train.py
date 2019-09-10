@@ -276,15 +276,15 @@ class COCOGAN(object):
         plt.show()
 
     def generate_micro(self):
-        z = np.random.normal(0.0,1.0,(1,126)).astype(np.float32)
-        z = np.repeat(z,self.opt.num_classes,0)
+        z = np.random.normal(0.0,1.0,(self.opt.batchsize,126)).astype(np.float32)
         z = torch.from_numpy(z)
         ebdy = torch.transpose(self.latent_ebdy_generator.ebd,0,1)
-        latent_ebdy = torch.cat((z,ebdy),1)
         micro_list = []
         with torch.no_grad():
             for i in range(self.opt.num_classes):
-                tmp_latent = latent_ebdy[i].view(1,-1).cuda()
+                tmp_ebdy = ebdy[i].view(1,2)
+                tmp_ebdy = tmp_ebdy.repeat(self.opt.batchsize,1)
+                tmp_latent = torch.cat((z,tmp_ebdy),1).cuda()
                 micro_list.append(self.G(tmp_latent,tmp_latent))
         hw = int(np.sqrt(self.opt.num_classes))
         hlist = []
