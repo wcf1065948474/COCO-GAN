@@ -37,6 +37,15 @@ from matplotlib.lines import Line2D
 #                 Line2D([0], [0], color="k", lw=4)], ['max-gradient', 'mean-gradient', 'zero-gradient'])
 #     plt.show()
 
+def tensor2im(image_tensor, imtype=np.uint8):
+    image_numpy = image_tensor[0].cpu().float().numpy()
+    image_numpy = (np.transpose(image_numpy, (1, 2, 0)) + 1) / 2.0 * 255.0
+    # image_numpy = (image_numpy-np.min(image_numpy))/(np.max(image_numpy)-np.min(image_numpy))
+    # image_numpy *= 255.0
+    image_numpy = np.maximum(image_numpy, 0)
+    image_numpy = np.minimum(image_numpy, 255)
+    return image_numpy.astype(imtype)
+
 def plot_grad_flow(named_parameters):
     ave_grads = []
     layers = []
@@ -291,11 +300,10 @@ class COCOGAN(object):
         for i in range(hw):
             hlist.append(torch.cat(micro_list[i*hw:i*hw+hw],3))
         full_img = torch.cat(hlist,2)
-        full_img = full_img[0]
-        full_img = full_img.permute(1,2,0)
+        full_img = tensor2im(full_img)
         plt.figure(figsize=(3,3))
         plt.axis('off')
-        plt.imshow(full_img.cpu())
+        plt.imshow(full_img)
         plt.show()
 
     
