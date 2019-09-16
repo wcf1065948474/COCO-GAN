@@ -141,6 +141,15 @@ class COCOGAN(object):
     #                 jj = j*self.opt.micro_size
     #                 macros[b,:,ii:ii+self.opt.micro_size,jj:jj+self.opt.micro_size] = micro[bb+hw*i+j].clone()
     #     return macros.cuda()
+    def macro_from_micro_parallel(self,micro):
+        microlist = []
+        macrolist = []
+        hw = int(np.sqrt(self.opt.micro_in_macro))
+        for i in range(self.opt.micro_in_macro):
+            microlist.append(micro[i*self.opt.batchsize:i*self.opt.batchsize+self.opt.batchsize])
+        for j in range(hw):
+            macrolist.append(torch.cat(microlist[j*hw:j*hw+hw],3))
+        return torch.cat(macrolist,2)
 
     def macro_from_micro(self,micro):
         macrolist = []
@@ -241,28 +250,34 @@ class COCOGAN(object):
             plot_grad_flow(self.G.named_parameters())
         self.optimizerG.step()
         self.g_losses.append(g_loss.item())
-    def train_micro(self,x,epoch,pos):
+    def train_parallel(self,x,epoch,pos):
         latent_ebdy,_ = self.latent_ebdy_generator.get_latent_ebdy(pos)
         latent_ebdy = latent_ebdy.cuda()
-        self.micro_patches = self.G(latent_ebdy,latent_ebdy)
+        micro_patches = self.G(latent_ebdy,latent_ebdy)
+        self.macro_patches = self.macro_from_micro_parallel(micro_patches)
+
         #update D()
         x = x.cuda()
         ebd_y = self.latent_ebdy_generator.get_ebdy(pos,'macro')
         ebd_y = ebd_y.cuda()
         self.D.zero_grad()
-        micro_data = self.micro_patches.detach()
-        fakeD,fakeDH = self.D(micro_data,ebd_y)
-        realD,realDH = self.D(x,ebd_y)
-        gradient_penalty = self.calc_gradient_penalty(x,micro_data,ebd_y)
-        d_loss = fakeD.mean()-realD.mean()+self.opt.ALPHA*(self.Lsloss(realDH,ebd_y)+self.Lsloss(fakeDH,ebd_y))+gradient_penalty
+        self.macro_data = self.macro_patches.detach()
+        fakeD,_ = self.D(self.macro_data,ebd_y)#y有问题！
+        realD,realDH = self.D(x,ebd_y)#y有问题！
+        gradient_penalty = self.calc_gradient_penalty(x,self.macro_data,ebd_y)
+        d_loss = fakeD.mean()-realD.mean()+gradient_penalty+self.opt.ALPHA*self.Lsloss(realDH,ebd_y)
         d_loss.backward()
+        if self.opt.showgrad:
+            plot_grad_flow(self.D.named_parameters())
         self.optimizerD.step()
         self.d_losses.append(d_loss.item())
         #update G()
         self.G.zero_grad()
-        realG,realGH = self.D(self.micro_patches,ebd_y)#y有问题!
+        realG,realGH = self.D(self.macro_patches,ebd_y)#y有问题!
         g_loss = -realG.mean()+self.opt.ALPHA*self.Lsloss(realGH,ebd_y)
         g_loss.backward()
+        if self.opt.showgrad:
+            plot_grad_flow(self.G.named_parameters())
         self.optimizerG.step()
         self.g_losses.append(g_loss.item())
 
