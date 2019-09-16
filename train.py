@@ -228,6 +228,8 @@ class COCOGAN(object):
         gradient_penalty = self.calc_gradient_penalty(x,self.macro_data,ebd_y)
         d_loss = fakeD.mean()-realD.mean()+gradient_penalty+self.opt.ALPHA*self.Lsloss(realDH,ebd_y)
         d_loss.backward()
+        if self.opt.showgrad:
+            plot_grad_flow(self.D.named_parameters())
         self.optimizerD.step()
         self.d_losses.append(d_loss.item())
         #update G()
@@ -235,6 +237,8 @@ class COCOGAN(object):
         realG,realGH = self.D(self.macro_patches,ebd_y)#y有问题!
         g_loss = -realG.mean()+self.opt.ALPHA*self.Lsloss(realGH,ebd_y)
         g_loss.backward()
+        if self.opt.showgrad:
+            plot_grad_flow(self.G.named_parameters())
         self.optimizerG.step()
         self.g_losses.append(g_loss.item())
     def train_micro(self,x,epoch,pos):
